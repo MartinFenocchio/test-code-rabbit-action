@@ -30,6 +30,7 @@ jobs:
           set -o pipefail
           coderabbit review \
             --plain \
+            --api-key "$CODERABBIT_API_KEY" \
             --base "origin/${{ github.event.pull_request.base.ref }}" \
             | tee review.md
 
