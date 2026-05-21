@@ -37,7 +37,8 @@ jobs:
           mkdir -p logs && unzip -q -o logs.zip -d logs
 
           # Sumamos prompt/completion de todas las llamadas LLM del run.
-          read PROMPT COMPLETION < <(grep -rh -oE '"usage": ?\{[^}]+\}' logs 2>/dev/null | \
+          # `sort -u` deduplica usage objects (pr-agent loggea cada uno dos veces, INFO + DEBUG).
+          read PROMPT COMPLETION < <(grep -rh -oE '"usage": ?\{[^}]+\}' logs 2>/dev/null | sort -u | \
             awk '
               {
                 if (match($0, /"prompt_tokens": *[0-9]+/))     { s = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", s); tp += s }
