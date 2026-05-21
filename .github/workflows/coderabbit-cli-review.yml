@@ -1,0 +1,48 @@
+name: CodeRabbit CLI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          # Historial completo para que CodeRabbit pueda comparar contra el base branch
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install CodeRabbit CLI
+        run: curl -fsSL https://cli.coderabbit.ai/install.sh | sh
+
+      - name: Run CodeRabbit review
+        env:
+          CODERABBIT_API_KEY: ${{ secrets.CODERABBIT_API_KEY }}
+        run: |
+          set -o pipefail
+          coderabbit review \
+            --plain \
+            --base "origin/${{ github.event.pull_request.base.ref }}" \
+            | tee review.md
+
+      - name: Post review as PR comment
+        if: always() && hashFiles('review.md') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "## 🐰 CodeRabbit CLI Review"
+            echo ""
+            echo '```'
+            cat review.md
+            echo '```'
+          } > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
