@@ -1,0 +1,14 @@
+[pr_reviewer]
+require_estimate_effort_to_review = false
+enable_review_labels_effort = false
+require_tests_review = false
+require_ticket_analysis_review = false
+num_max_findings = 5
+extra_instructions = """
+Prefix every issue title with a severity emoji:
+🔴 critical — bugs that cause incorrect behavior, crashes, data loss, security vulnerabilities, or breaking API changes.
+🟡 medium — likely bugs, edge cases, performance issues, or important maintainability problems.
+🟢 low — minor improvements, style, naming, or nits.
+Sort issues from 🔴 to 🟢. Skip 🟢 issues unless there are fewer than 3 issues total.
+Respond in Spanish.
+"""
