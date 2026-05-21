@@ -8,6 +8,7 @@ permissions:
   issues: write
   pull-requests: write
   contents: read
+  actions: read
 
 jobs:
   pr_agent_job:
@@ -26,3 +27,54 @@ jobs:
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: "false"
           # Incluir "synchronize" para que cada push al PR re-dispare el review.
           GITHUB_ACTION_CONFIG.PR_ACTIONS: '["opened","reopened","ready_for_review","synchronize"]'
+
+      - name: Post review cost comment
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Precios gpt-5.5 (USD por 1M tokens). Ajustar si cambia el modelo.
+          INPUT_PRICE_PER_1M: "5"
+          OUTPUT_PRICE_PER_1M: "30"
+          MODEL_NAME: "gpt-5.5"
+        run: |
+          set -uo pipefail
+
+          # Damos unos segundos para que el log del step anterior se flushee.
+          sleep 10
+
+          # Descargar logs del run actual.
+          if ! gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/logs" > logs.zip 2>/dev/null; then
+            echo "No se pudieron obtener los logs todavía, salto el comentario de costo."
+            exit 0
+          fi
+
+          mkdir -p logs && unzip -q -o logs.zip -d logs
+
+          # Sumamos prompt/completion de todas las llamadas LLM del run.
+          read PROMPT COMPLETION < <(grep -h -oE '"usage": ?\{[^}]+\}' logs/*/*.txt 2>/dev/null | \
+            awk '
+              {
+                match($0, /"prompt_tokens": *[0-9]+/);     p = substr($0, RSTART+16, RLENGTH-16); gsub(/[^0-9]/, "", p);
+                match($0, /"completion_tokens": *[0-9]+/); c = substr($0, RSTART+20, RLENGTH-20); gsub(/[^0-9]/, "", c);
+                tp += p; tc += c
+              }
+              END { printf "%d %d\n", tp, tc }
+            ')
+
+          if [ -z "${PROMPT:-}" ] || [ "$PROMPT" = "0" ]; then
+            echo "No se encontró usage en los logs, salto el comentario."
+            exit 0
+          fi
+
+          COST=$(awk -v p="$PROMPT" -v c="$COMPLETION" -v pi="$INPUT_PRICE_PER_1M" -v po="$OUTPUT_PRICE_PER_1M" \
+            'BEGIN { printf "%.5f", (p*pi + c*po) / 1000000 }')
+
+          {
+            printf '💰 **Review cost**: $%s USD\n\n' "$COST"
+            printf -- '- Model: `%s`\n' "$MODEL_NAME"
+            printf -- '- Prompt tokens: %s\n' "$PROMPT"
+            printf -- '- Completion tokens: %s\n' "$COMPLETION"
+            printf -- '- Pricing: $%s/1M input · $%s/1M output\n' "$INPUT_PRICE_PER_1M" "$OUTPUT_PRICE_PER_1M"
+          } > cost-comment.md
+
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file cost-comment.md
